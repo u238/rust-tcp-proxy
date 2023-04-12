@@ -1,5 +1,6 @@
 use std::env;
 use std::io;
+use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::thread;
@@ -33,6 +34,22 @@ fn main() {
 fn handle_conn(lhs_stream: TcpStream, rhs_stream: TcpStream) {
     let lhs_arc = Arc::new(lhs_stream);
     let rhs_arc = Arc::new(rhs_stream);
+
+    // try to read first 32 bytes of connection
+    // in the ssh2 protocol handshake first thing that is sent from the client is his name.
+    let mut incoming = lhs_arc.try_clone().unwrap();
+    let mut buf:[u8; 32] = [0; 32];
+    let bytes_read = incoming.read(&mut buf).unwrap();
+    let client_header = String::from_utf8_lossy(&buf);
+    if client_header.starts_with("SSH-2.0-libssh2") {
+        println!("[!] dropping connection from libssh2!");
+        incoming.shutdown(std::net::Shutdown::Both).unwrap();
+        return
+    } else {
+        println!("[+] not libssh2, forwarding communication ...");
+        let mut outgoing = rhs_arc.try_clone().unwrap();
+        let _size = outgoing.write(&buf[0 ..bytes_read]).unwrap();
+    }
 
     let (mut lhs_tx, mut lhs_rx) = (lhs_arc.try_clone().unwrap(), lhs_arc.try_clone().unwrap());
     let (mut rhs_tx, mut rhs_rx) = (rhs_arc.try_clone().unwrap(), rhs_arc.try_clone().unwrap());
